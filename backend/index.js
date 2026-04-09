@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -5,8 +6,8 @@ const mongoose = require("mongoose");
 const VoiceResponse = require("twilio").twiml.VoiceResponse;
 const axios = require("axios");
 const { prompt } = require("./prompt");
-const OPENROUTER_API_KEY =
-  "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";
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 const app = express();
 
@@ -15,11 +16,11 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 mongoose
-  .connect("mongodb://127.0.0.1:27017/complaints", {
+  .connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/complaints", {
     serverSelectionTimeoutMS: 5000,
   })
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
+  .then(() => console.log(" MongoDB connected"))
+  .catch((err) => console.error("MongoDB error:", err));
 
 const ComplaintSchema = new mongoose.Schema({
   name: String,
@@ -60,7 +61,7 @@ app.post("/voice", (req, res) => {
     speechTimeout: "auto",
   });
 
-  gather.say("Welcome to complaint system. Please say your name.");
+  gather.say("Hello! Thank you for calling the Vadodara Municipal Corporation complaint helpline. To get started, could you please tell me your name?");
 
   res.type("text/xml").send(twiml.toString());
 });
@@ -80,7 +81,7 @@ app.post("/get-name", (req, res) => {
     speechTimeout: "auto",
   });
 
-  gather.say("Please say your address.");
+  gather.say("Got it, thank you. Now, could you tell me your full address, including your area or locality?");
 
   res.type("text/xml").send(twiml.toString());
 });
@@ -101,7 +102,7 @@ app.post("/get-address", (req, res) => {
     speechTimeout: "auto",
   });
 
-  gather.say("Please say your ward number.");
+  gather.say("Thank you. Now could you please tell me your ward number? If not, just say you're not sure.");
 
   res.type("text/xml").send(twiml.toString());
 });
@@ -125,7 +126,7 @@ app.post("/get-ward", (req, res) => {
     speechTimeout: "auto",
   });
 
-  gather.say("Please describe your issue.");
+  gather.say("Alright, now please describe the issue you're facing.");
 
   res.type("text/xml").send(twiml.toString());
 });
@@ -152,12 +153,11 @@ Complaint: ${issue}
     zone: extracted?.zone,
   };
 
-  console.log("🧠 Final Data:", finalData);
+  console.log("Final Data:", finalData);
 
   const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
-  // 🔥 DTMF gather
   const gather = twiml.gather({
     input: "dtmf",
     numDigits: 1,
@@ -167,15 +167,15 @@ Complaint: ${issue}
   });
 
   gather.say(
-    `Please confirm your complaint.
-     Name ${finalData.name}.
-     Address ${finalData.address}.
+    `Okay, let me read that back to you.
+     Your name is ${finalData.name}.
+     Your address is ${finalData.address}.
      Ward ${finalData.ward}.
-     Issue ${finalData.issue}.
-     Press 1 to confirm. Press 2 to retry.`,
+     And the issue is: ${finalData.issue}.
+     If everything sounds correct, press 1. If you'd like to start over, press 2.`,
   );
 
-  twiml.say("No input received. Restarting.");
+  twiml.say("I didn't catch your response. Let me take you back to the beginning.");
   twiml.redirect("/voice");
 
   res.type("text/xml").send(twiml.toString());
@@ -193,13 +193,13 @@ app.post("/confirm", async (req, res) => {
   if (digit === "1") {
     await Complaint.create(data);
 
-    twiml.say("Thank you. Your complaint has been registered.");
+    twiml.say("Thank you so much! Your complaint has been successfully registered. Our team will look into it shortly. Have a great day!");
     twiml.hangup();
   } else if (digit === "2") {
-    twiml.say("Let's try again.");
+    twiml.say("No problem at all. Let's start over from the beginning.");
     twiml.redirect("/voice");
   } else {
-    twiml.say("Invalid input.");
+    twiml.say("Sorry, I didn't understand that. Let me take you back.");
     twiml.redirect("/voice");
   }
 
@@ -233,8 +233,6 @@ app.post("/transcription", async (req, res) => {
 
   res.send("OK");
 });
-
-// ---- Employee & Complaint API ----
 
 app.get("/employees", async (req, res) => {
   console.log("Fetching employees...");
@@ -323,11 +321,12 @@ async function extractComplaintData(text) {
 
     return JSON.parse(output);
   } catch (err) {
-    console.error("❌ NLP Error:", err.message);
+    console.error("Open router Error:", err.message);
     return null;
   }
 }
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
