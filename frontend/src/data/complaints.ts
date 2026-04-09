@@ -91,7 +91,7 @@ export const mockComplaints: Complaint[] = [
   },
 ];
 
-const API_BASE = "/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 const VALID_CATEGORIES = new Set(["street_light", "water_supply", "garbage", "drainage", "road", "other"]);
 
@@ -99,7 +99,6 @@ function normalizeCategory(raw?: string): Category {
   if (!raw) return "other";
   const lower = raw.toLowerCase().replace(/\s+/g, "_");
   if (VALID_CATEGORIES.has(lower)) return lower as Category;
-  // Map common variations
   if (lower.includes("light") || lower.includes("electric")) return "street_light";
   if (lower.includes("water")) return "water_supply";
   if (lower.includes("garbage") || lower.includes("waste") || lower.includes("trash")) return "garbage";
@@ -109,7 +108,7 @@ function normalizeCategory(raw?: string): Category {
 }
 
 export async function fetchComplaints(): Promise<Complaint[]> {
-  for (const base of ["/api", "http://localhost:3000"]) {
+  for (const base of ["/api", API_URL]) {
     try {
       console.log(`📡 Trying ${base}/complaints...`);
       const res = await fetch(`${base}/complaints`);

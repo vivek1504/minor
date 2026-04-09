@@ -14,11 +14,11 @@ export const roleLabel: Record<string, string> = {
   field_worker: "Field Worker",
 };
 
-const API_BASE = "/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 export async function fetchEmployees(): Promise<Employee[]> {
   // Try proxy first, then direct backend
-  for (const base of ["/api", "http://localhost:3000"]) {
+  for (const base of ["/api", API_URL]) {
     try {
       const res = await fetch(`${base}/employees`);
       if (!res.ok) continue;

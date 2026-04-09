@@ -50,6 +50,10 @@ const EmployeeSchema = new mongoose.Schema({
 
 const Employee = mongoose.model("Employee", EmployeeSchema);
 
+app.get("/health", (req, res) => {
+  res.send("OK");
+})
+
 app.post("/voice", (req, res) => {
   const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
