@@ -1,0 +1,333 @@
+const express = require("express");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const mongoose = require("mongoose");
+const VoiceResponse = require("twilio").twiml.VoiceResponse;
+const axios = require("axios");
+const { prompt } = require("./prompt");
+const OPENROUTER_API_KEY =
+  "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";
+
+const app = express();
+
+app.use(cors());
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+mongoose
+  .connect("mongodb://127.0.0.1:27017/complaints", {
+    serverSelectionTimeoutMS: 5000,
+  })
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB error:", err));
+
+const ComplaintSchema = new mongoose.Schema({
+  name: String,
+  address: String,
+  issue: String,
+  category: String,
+  ward: String,
+  zone: String,
+  status: { type: String, default: "pending" },
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
+  text: String,
+  createdAt: { type: Date, default: Date.now },
+});
+
+const Complaint = mongoose.model("Complaint", ComplaintSchema);
+
+const EmployeeSchema = new mongoose.Schema({
+  name: String,
+  role: String,
+  department: String,
+  zone: String,
+  phone: String,
+  email: String,
+  active: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const Employee = mongoose.model("Employee", EmployeeSchema);
+
+app.post("/voice", (req, res) => {
+  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+
+  const gather = twiml.gather({
+    input: "speech",
+    action: "/get-name",
+    method: "POST",
+    speechTimeout: "auto",
+  });
+
+  gather.say("Welcome to complaint system. Please say your name.");
+
+  res.type("text/xml").send(twiml.toString());
+});
+
+app.post("/get-name", (req, res) => {
+  const name = req.body.SpeechResult;
+
+  console.log("Name:", name);
+
+  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+
+  const gather = twiml.gather({
+    input: "speech",
+    action: `/get-address?name=${encodeURIComponent(name)}`,
+    method: "POST",
+    speechTimeout: "auto",
+  });
+
+  gather.say("Please say your address.");
+
+  res.type("text/xml").send(twiml.toString());
+});
+
+app.post("/get-address", (req, res) => {
+  const name = req.query.name;
+  const address = req.body.SpeechResult;
+
+  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+
+  const gather = twiml.gather({
+    input: "speech",
+    action: `/get-ward?name=${encodeURIComponent(
+      name,
+    )}&address=${encodeURIComponent(address)}`,
+    method: "POST",
+    speechTimeout: "auto",
+  });
+
+  gather.say("Please say your ward number.");
+
+  res.type("text/xml").send(twiml.toString());
+});
+
+app.post("/get-ward", (req, res) => {
+  const name = req.query.name;
+  const address = req.query.address;
+  const ward = req.body.SpeechResult;
+
+  console.log("Ward:", ward);
+
+  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+
+  const gather = twiml.gather({
+    input: "speech",
+    action: `/get-issue?name=${encodeURIComponent(
+      name,
+    )}&address=${encodeURIComponent(address)}&ward=${encodeURIComponent(ward)}`,
+    method: "POST",
+    speechTimeout: "auto",
+  });
+
+  gather.say("Please describe your issue.");
+
+  res.type("text/xml").send(twiml.toString());
+});
+
+app.post("/get-issue", async (req, res) => {
+  const { name, address, ward } = req.query;
+  const issue = req.body.SpeechResult;
+
+  const fullText = `
+Name: ${name}
+Address: ${address}
+Ward: ${ward}
+Complaint: ${issue}
+  `;
+
+  const extracted = await extractComplaintData(fullText);
+
+  const finalData = {
+    name: extracted?.name || name,
+    address: extracted?.address || address,
+    issue: extracted?.issue || issue,
+    category: extracted?.category,
+    ward: ward || extracted?.ward,
+    zone: extracted?.zone,
+  };
+
+  console.log("🧠 Final Data:", finalData);
+
+  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+
+  // 🔥 DTMF gather
+  const gather = twiml.gather({
+    input: "dtmf",
+    numDigits: 1,
+    timeout: 5,
+    action: `/confirm?data=${encodeURIComponent(JSON.stringify(finalData))}`,
+    method: "POST",
+  });
+
+  gather.say(
+    `Please confirm your complaint.
+     Name ${finalData.name}.
+     Address ${finalData.address}.
+     Ward ${finalData.ward}.
+     Issue ${finalData.issue}.
+     Press 1 to confirm. Press 2 to retry.`,
+  );
+
+  twiml.say("No input received. Restarting.");
+  twiml.redirect("/voice");
+
+  res.type("text/xml").send(twiml.toString());
+});
+
+app.post("/confirm", async (req, res) => {
+  const digit = req.body.Digits;
+  const data = JSON.parse(req.query.data);
+
+  console.log("User pressed:", digit);
+
+  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+
+  if (digit === "1") {
+    await Complaint.create(data);
+
+    twiml.say("Thank you. Your complaint has been registered.");
+    twiml.hangup();
+  } else if (digit === "2") {
+    twiml.say("Let's try again.");
+    twiml.redirect("/voice");
+  } else {
+    twiml.say("Invalid input.");
+    twiml.redirect("/voice");
+  }
+
+  res.type("text/xml").send(twiml.toString());
+});
+
+app.post("/handle-recording", (req, res) => {
+  console.log("Recording completed");
+  console.log("Recording URL:", req.body.RecordingUrl);
+
+  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  const twiml = new VoiceResponse();
+
+  twiml.say("Thank you. Your complaint has been recorded.");
+
+  twiml.hangup();
+
+  res.set("Content-Type", "text/xml");
+  res.send(twiml.toString());
+});
+
+app.post("/transcription", async (req, res) => {
+  console.log("request reached");
+  const transcription = req.body.TranscriptionText;
+
+  console.log("User said:", transcription);
+
+  if (transcription) {
+    await Complaint.create({ text: transcription });
+  }
+
+  res.send("OK");
+});
+
+// ---- Employee & Complaint API ----
+
+app.get("/employees", async (req, res) => {
+  console.log("Fetching employees...");
+  try {
+    const employees = await Employee.find({ active: true }).sort({ name: 1 });
+    res.json(employees);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/complaints", async (req, res) => {
+  console.log("Fetching complaints...");
+  try {
+    const data = await Complaint.find()
+      .populate("assignedTo", "name role department zone")
+      .sort({ createdAt: -1 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/complaints/:id", async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id)
+      .populate("assignedTo", "name role department zone phone email");
+    if (!complaint) return res.status(404).json({ error: "Not found" });
+    res.json(complaint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch("/complaints/:id", async (req, res) => {
+  try {
+    const { status, assignedTo, notes } = req.body;
+    const update = {};
+    if (status) update.status = status;
+    if (assignedTo !== undefined) update.assignedTo = assignedTo || null;
+    if (notes !== undefined) update.notes = notes;
+
+    const complaint = await Complaint.findByIdAndUpdate(
+      req.params.id,
+      update,
+      { new: true }
+    ).populate("assignedTo", "name role department zone");
+
+    if (!complaint) return res.status(404).json({ error: "Not found" });
+    console.log(`✅ Updated complaint ${req.params.id}:`, update);
+    res.json(complaint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function extractComplaintData(text) {
+  try {
+    const response = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "openai/gpt-4o-mini",
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: text },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    let output = response.data.choices[0].message.content;
+
+    output = output.trim();
+
+    const jsonStart = output.indexOf("{");
+    const jsonEnd = output.lastIndexOf("}");
+
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      output = output.substring(jsonStart, jsonEnd + 1);
+    }
+
+    return JSON.parse(output);
+  } catch (err) {
+    console.error("❌ NLP Error:", err.message);
+    return null;
+  }
+}
+
+app.listen(3000, () => {
+  console.log("Server running on port 3000");
+});
