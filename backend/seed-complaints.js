@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 mongoose
-  .connect("mongodb://127.0.0.1:27017/complaints", {
+  .connect("mongodb+srv://jadhavvivek2743:NRxfidwJEX9iaiYA@cluster0.qiychex.mongodb.net/complaints?retryWrites=true&w=majority&appName=Cluster0", {
     serverSelectionTimeoutMS: 5000,
   })
   .then(async () => {

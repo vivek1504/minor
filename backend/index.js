@@ -11,9 +11,19 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 const app = express();
 
+const log = (...args) => console.log("[LOG]", new Date().toISOString(), ...args);
+const errorLog = (...args) => console.error("[ERROR]", new Date().toISOString(), ...args);
+
 app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use((req, res, next) => {
+  log(`Incoming Request → ${req.method} ${req.url}`);
+  log("Headers:", req.headers);
+  log("Query:", req.query);
+  log("Body:", req.body);
+  next();
+});
 
 mongoose
   .connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/complaints", {
@@ -55,6 +65,7 @@ app.get("/health", (req, res) => {
 })
 
 app.post("/voice", (req, res) => {
+  log("📞 /voice triggered");
   const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
@@ -71,6 +82,8 @@ app.post("/voice", (req, res) => {
 });
 
 app.post("/get-name", (req, res) => {
+  log("➡️ /get-name");
+  log("SpeechResult (name):", req.body.SpeechResult);
   const name = req.body.SpeechResult;
 
   console.log("Name:", name);
@@ -91,6 +104,9 @@ app.post("/get-name", (req, res) => {
 });
 
 app.post("/get-address", (req, res) => {
+  log("➡️ /get-address");
+  log("Name:", req.query.name);
+  log("SpeechResult (address):", req.body.SpeechResult);
   const name = req.query.name;
   const address = req.body.SpeechResult;
 
@@ -112,6 +128,10 @@ app.post("/get-address", (req, res) => {
 });
 
 app.post("/get-ward", (req, res) => {
+  log("➡️ /get-ward");
+  log("Name:", req.query.name);
+  log("Address:", req.query.address);
+  log("Ward:", req.body.SpeechResult);
   const name = req.query.name;
   const address = req.query.address;
   const ward = req.body.SpeechResult;
@@ -136,6 +156,8 @@ app.post("/get-ward", (req, res) => {
 });
 
 app.post("/get-issue", async (req, res) => {
+  log("➡️ /get-issue");
+  log("Incoming data:", { ...req.query, issue: req.body.SpeechResult });
   const { name, address, ward } = req.query;
   const issue = req.body.SpeechResult;
 
@@ -157,7 +179,8 @@ Complaint: ${issue}
     zone: extracted?.zone,
   };
 
-  console.log("Final Data:", finalData);
+  log("🧠 AI Extracted Data:", extracted);
+  log("📦 Final Data:", finalData);
 
   const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
@@ -186,6 +209,9 @@ Complaint: ${issue}
 });
 
 app.post("/confirm", async (req, res) => {
+  log("➡️ /confirm");
+  log("Digit pressed:", req.body.Digits);
+  log("Parsed Data:", data);
   const digit = req.body.Digits;
   const data = JSON.parse(req.query.data);
 
@@ -196,7 +222,7 @@ app.post("/confirm", async (req, res) => {
 
   if (digit === "1") {
     await Complaint.create(data);
-
+    log("✅ Complaint saved to DB");
     twiml.say("Thank you so much! Your complaint has been successfully registered. Our team will look into it shortly. Have a great day!");
     twiml.hangup();
   } else if (digit === "2") {
@@ -226,6 +252,8 @@ app.post("/handle-recording", (req, res) => {
 });
 
 app.post("/transcription", async (req, res) => {
+  log("📝 Transcription received");
+  log("User said:", transcription);
   console.log("request reached");
   const transcription = req.body.TranscriptionText;
 
@@ -295,6 +323,9 @@ app.patch("/complaints/:id", async (req, res) => {
 
 async function extractComplaintData(text) {
   try {
+    log("🧠 Sending to OpenRouter...");
+    log("Input Text:", text);
+
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -312,7 +343,11 @@ async function extractComplaintData(text) {
       },
     );
 
+    log("📥 Raw AI Response:", response.data);
+
     let output = response.data.choices[0].message.content;
+
+    log("🧾 AI Output (raw):", output);
 
     output = output.trim();
 
@@ -323,9 +358,15 @@ async function extractComplaintData(text) {
       output = output.substring(jsonStart, jsonEnd + 1);
     }
 
-    return JSON.parse(output);
+    log("🧾 AI Output (cleaned JSON):", output);
+
+    const parsed = JSON.parse(output);
+
+    log("✅ Parsed AI JSON:", parsed);
+
+    return parsed;
   } catch (err) {
-    console.error("Open router Error:", err.message);
+    errorLog("❌ OpenRouter Error:", err.response?.data || err.message);
     return null;
   }
 }
