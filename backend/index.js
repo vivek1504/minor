@@ -288,6 +288,16 @@ app.get("/complaints", async (req, res) => {
   }
 });
 
+app.post("/complaints", async (req, res) => {
+  try {
+    const complaint = await Complaint.create(req.body);
+    console.log("✅ New complaint created from dashboard:", complaint._id);
+    res.status(201).json(complaint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/complaints/:id", async (req, res) => {
   try {
     const complaint = await Complaint.findById(req.params.id)
