@@ -28,6 +28,9 @@ const Complaint = mongoose.model(
     issue: String,
     category: String,
     zone: String,
+    status: { type: String, default: "pending" },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
+    text: String,
     createdAt: { type: Date, default: Date.now },
   })
 );
@@ -200,8 +203,28 @@ app.post("/confirm", async (req, res) => {
   res.type("text/xml").send(twiml.toString());
 });
 
+// ================= DASHBOARD API =================
+const cors = require("cors");
+app.use(cors());
+
+const EmployeeSchema = new mongoose.Schema({
+  name: String,
+  role: String,
+  department: String,
+  zone: String,
+  phone: String,
+  email: String,
+  active: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const Employee = mongoose.model("Employee", EmployeeSchema);
+
+app.get("/health", (req, res) => {
+  res.send("OK");
+});
+
 app.get("/employees", async (req, res) => {
-  console.log("Fetching employees...");
   try {
     const employees = await Employee.find({ active: true }).sort({ name: 1 });
     res.json(employees);
@@ -211,7 +234,6 @@ app.get("/employees", async (req, res) => {
 });
 
 app.get("/complaints", async (req, res) => {
-  console.log("Fetching complaints...");
   try {
     const data = await Complaint.find()
       .populate("assignedTo", "name role department zone")
@@ -266,6 +288,7 @@ app.patch("/complaints/:id", async (req, res) => {
 });
 
 // ================= START =================
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
