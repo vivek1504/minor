@@ -8,6 +8,7 @@ const axios = require("axios");
 const { prompt } = require("./prompt");
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const BASE_URL = "https://minor-d49z.onrender.com";
 
 const app = express();
 
@@ -71,7 +72,7 @@ app.post("/voice", (req, res) => {
 
   const gather = twiml.gather({
     input: "speech",
-    action: "/get-name",
+    action: `${BASE_URL}/get-name`,
     method: "POST",
     speechTimeout: "auto",
   });
@@ -93,7 +94,7 @@ app.post("/get-name", (req, res) => {
 
   const gather = twiml.gather({
     input: "speech",
-    action: `/get-address?name=${encodeURIComponent(name)}`,
+    action: `${BASE_URL}/get-address?name=${encodeURIComponent(name)}`,
     method: "POST",
     speechTimeout: "auto",
   });
@@ -115,9 +116,7 @@ app.post("/get-address", (req, res) => {
 
   const gather = twiml.gather({
     input: "speech",
-    action: `/get-ward?name=${encodeURIComponent(
-      name,
-    )}&address=${encodeURIComponent(address)}`,
+    action: `${BASE_URL}/get-ward?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`,
     method: "POST",
     speechTimeout: "auto",
   });
@@ -143,9 +142,7 @@ app.post("/get-ward", (req, res) => {
 
   const gather = twiml.gather({
     input: "speech",
-    action: `/get-issue?name=${encodeURIComponent(
-      name,
-    )}&address=${encodeURIComponent(address)}&ward=${encodeURIComponent(ward)}`,
+    action: `${BASE_URL}/get-issue?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&ward=${encodeURIComponent(ward)}`,
     method: "POST",
     speechTimeout: "auto",
   });
@@ -189,7 +186,7 @@ Complaint: ${issue}
     input: "dtmf",
     numDigits: 1,
     timeout: 5,
-    action: `/confirm?data=${encodeURIComponent(JSON.stringify(finalData))}`,
+    action: `${BASE_URL}/confirm?data=${encodeURIComponent(JSON.stringify(finalData))}`,
     method: "POST",
   });
 
@@ -211,9 +208,9 @@ Complaint: ${issue}
 app.post("/confirm", async (req, res) => {
   log("➡️ /confirm");
   log("Digit pressed:", req.body.Digits);
-  log("Parsed Data:", data);
   const digit = req.body.Digits;
   const data = JSON.parse(req.query.data);
+  log("Parsed Data:", data);
 
   console.log("User pressed:", digit);
 
@@ -227,10 +224,10 @@ app.post("/confirm", async (req, res) => {
     twiml.hangup();
   } else if (digit === "2") {
     twiml.say("No problem at all. Let's start over from the beginning.");
-    twiml.redirect("/voice");
+    twiml.redirect(`${BASE_URL}/voice`);
   } else {
     twiml.say("Sorry, I didn't understand that. Let me take you back.");
-    twiml.redirect("/voice");
+    twiml.redirect(`${BASE_URL}/voice`);
   }
 
   res.type("text/xml").send(twiml.toString());
@@ -253,11 +250,8 @@ app.post("/handle-recording", (req, res) => {
 
 app.post("/transcription", async (req, res) => {
   log("📝 Transcription received");
-  log("User said:", transcription);
-  console.log("request reached");
   const transcription = req.body.TranscriptionText;
-
-  console.log("User said:", transcription);
+  log("User said:", transcription);
 
   if (transcription) {
     await Complaint.create({ text: transcription });
