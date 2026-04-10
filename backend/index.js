@@ -200,6 +200,71 @@ app.post("/confirm", async (req, res) => {
   res.type("text/xml").send(twiml.toString());
 });
 
+app.get("/employees", async (req, res) => {
+  console.log("Fetching employees...");
+  try {
+    const employees = await Employee.find({ active: true }).sort({ name: 1 });
+    res.json(employees);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/complaints", async (req, res) => {
+  console.log("Fetching complaints...");
+  try {
+    const data = await Complaint.find()
+      .populate("assignedTo", "name role department zone")
+      .sort({ createdAt: -1 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/complaints", async (req, res) => {
+  try {
+    const complaint = await Complaint.create(req.body);
+    console.log("✅ New complaint created from dashboard:", complaint._id);
+    res.status(201).json(complaint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/complaints/:id", async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id)
+      .populate("assignedTo", "name role department zone phone email");
+    if (!complaint) return res.status(404).json({ error: "Not found" });
+    res.json(complaint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch("/complaints/:id", async (req, res) => {
+  try {
+    const { status, assignedTo, notes } = req.body;
+    const update = {};
+    if (status) update.status = status;
+    if (assignedTo !== undefined) update.assignedTo = assignedTo || null;
+    if (notes !== undefined) update.notes = notes;
+
+    const complaint = await Complaint.findByIdAndUpdate(
+      req.params.id,
+      update,
+      { new: true }
+    ).populate("assignedTo", "name role department zone");
+
+    if (!complaint) return res.status(404).json({ error: "Not found" });
+    console.log(`✅ Updated complaint ${req.params.id}:`, update);
+    res.json(complaint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ================= START =================
 app.listen(3000, () => {
   console.log("Server running on port 3000");
