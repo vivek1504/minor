@@ -11,6 +11,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const BASE_URL = "https://minor-d49z.onrender.com";
 
 const app = express();
+const sessions = {};
 
 const log = (...args) => console.log("[LOG]", new Date().toISOString(), ...args);
 const errorLog = (...args) => console.error("[ERROR]", new Date().toISOString(), ...args);
@@ -83,150 +84,118 @@ app.post("/voice", (req, res) => {
 });
 
 app.post("/get-name", (req, res) => {
-  log("➡️ /get-name");
-  log("SpeechResult (name):", req.body.SpeechResult);
+  const callSid = req.body.CallSid;
   const name = req.body.SpeechResult;
 
-  console.log("Name:", name);
+  sessions[callSid] = { name };
 
-  const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
   const gather = twiml.gather({
     input: "speech",
-    action: `${BASE_URL}/get-address?name=${encodeURIComponent(name)}`,
+    action: `${BASE_URL}/get-address`,
     method: "POST",
-    speechTimeout: "auto",
   });
 
-  gather.say("Got it, thank you. Now, could you tell me your full address, including your area or locality?");
+  gather.say("Please say your address.");
 
   res.type("text/xml").send(twiml.toString());
 });
 
 app.post("/get-address", (req, res) => {
-  log("➡️ /get-address");
-  log("Name:", req.query.name);
-  log("SpeechResult (address):", req.body.SpeechResult);
-  const name = req.query.name;
+  const callSid = req.body.CallSid;
   const address = req.body.SpeechResult;
 
-  const VoiceResponse = require("twilio").twiml.VoiceResponse;
+  sessions[callSid].address = address;
+
   const twiml = new VoiceResponse();
 
   const gather = twiml.gather({
     input: "speech",
-    action: `${BASE_URL}/get-ward?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`,
+    action: `${BASE_URL}/get-ward`,
     method: "POST",
-    speechTimeout: "auto",
   });
 
-  gather.say("Thank you. Now could you please tell me your ward number? If not, just say you're not sure.");
+  gather.say("Please say your ward number.");
 
   res.type("text/xml").send(twiml.toString());
 });
 
 app.post("/get-ward", (req, res) => {
-  log("➡️ /get-ward");
-  log("Name:", req.query.name);
-  log("Address:", req.query.address);
-  log("Ward:", req.body.SpeechResult);
-  const name = req.query.name;
-  const address = req.query.address;
+  const callSid = req.body.CallSid;
   const ward = req.body.SpeechResult;
 
-  console.log("Ward:", ward);
+  sessions[callSid].ward = ward;
 
-  const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
   const gather = twiml.gather({
     input: "speech",
-    action: `${BASE_URL}/get-issue?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&ward=${encodeURIComponent(ward)}`,
+    action: `${BASE_URL}/get-issue`,
     method: "POST",
-    speechTimeout: "auto",
   });
 
-  gather.say("Alright, now please describe the issue you're facing.");
+  gather.say("Please describe your issue.");
 
   res.type("text/xml").send(twiml.toString());
 });
 
 app.post("/get-issue", async (req, res) => {
-  log("➡️ /get-issue");
-  log("Incoming data:", { ...req.query, issue: req.body.SpeechResult });
-  const { name, address, ward } = req.query;
+  const callSid = req.body.CallSid;
   const issue = req.body.SpeechResult;
 
+  const session = sessions[callSid];
+
   const fullText = `
-Name: ${name}
-Address: ${address}
-Ward: ${ward}
+Name: ${session.name}
+Address: ${session.address}
+Ward: ${session.ward}
 Complaint: ${issue}
   `;
 
   const extracted = await extractComplaintData(fullText);
 
   const finalData = {
-    name: extracted?.name || name,
-    address: extracted?.address || address,
+    ...session,
     issue: extracted?.issue || issue,
     category: extracted?.category,
-    ward: ward || extracted?.ward,
     zone: extracted?.zone,
   };
 
-  log("🧠 AI Extracted Data:", extracted);
-  log("📦 Final Data:", finalData);
+  sessions[callSid] = finalData;
 
-  const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
   const gather = twiml.gather({
     input: "dtmf",
     numDigits: 1,
-    timeout: 5,
-    action: `${BASE_URL}/confirm?data=${encodeURIComponent(JSON.stringify(finalData))}`,
+    action: `${BASE_URL}/confirm`,
     method: "POST",
   });
 
   gather.say(
-    `Okay, let me read that back to you.
-     Your name is ${finalData.name}.
-     Your address is ${finalData.address}.
-     Ward ${finalData.ward}.
-     And the issue is: ${finalData.issue}.
-     If everything sounds correct, press 1. If you'd like to start over, press 2.`,
+    `Name ${finalData.name}, Address ${finalData.address}, Ward ${finalData.ward}, Issue ${finalData.issue}. Press 1 to confirm, 2 to retry.`
   );
-
-  twiml.say("I didn't catch your response. Let me take you back to the beginning.");
-  twiml.redirect("/voice");
 
   res.type("text/xml").send(twiml.toString());
 });
 
 app.post("/confirm", async (req, res) => {
-  log("➡️ /confirm");
-  log("Digit pressed:", req.body.Digits);
+  const callSid = req.body.CallSid;
   const digit = req.body.Digits;
-  const data = JSON.parse(req.query.data);
-  log("Parsed Data:", data);
 
-  console.log("User pressed:", digit);
+  const data = sessions[callSid];
 
-  const VoiceResponse = require("twilio").twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
   if (digit === "1") {
     await Complaint.create(data);
-    log("✅ Complaint saved to DB");
-    twiml.say("Thank you so much! Your complaint has been successfully registered. Our team will look into it shortly. Have a great day!");
+
+    delete sessions[callSid]; // cleanup
+
+    twiml.say("Complaint registered successfully.");
     twiml.hangup();
-  } else if (digit === "2") {
-    twiml.say("No problem at all. Let's start over from the beginning.");
-    twiml.redirect(`${BASE_URL}/voice`);
   } else {
-    twiml.say("Sorry, I didn't understand that. Let me take you back.");
     twiml.redirect(`${BASE_URL}/voice`);
   }
 
