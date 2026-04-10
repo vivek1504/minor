@@ -3,6 +3,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const VoiceResponse = require("twilio").twiml.VoiceResponse;
+const axios = require("axios");
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -148,11 +149,22 @@ app.post("/get-issue", async (req, res) => {
 
   const session = sessions[callSid];
 
+  const fullText = `
+    Name: ${session.name}
+    Address: ${session.address}
+    Ward: ${session.ward}
+    Complaint: ${issue}
+    `;
+
+  const extracted = await extractComplaintData(fullText);
+
   const finalData = {
-    name: session.name,
-    address: session.address,
-    ward: session.ward,
-    issue,
+    name: extracted?.name || session.name,
+    address: extracted?.address || session.address,
+    ward: extracted?.ward || session.ward,
+    issue: extracted?.issue || issue,
+    category: extracted?.category,
+    zone: extracted?.zone,
   };
 
   sessions[callSid] = finalData;
@@ -286,6 +298,39 @@ app.patch("/complaints/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+async function extractComplaintData(text) {
+  try {
+    const response = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "openai/gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Extract complaint data into JSON with fields:
+            name, address, ward, issue, category, zone.
+            Return only JSON.`,
+          },
+          { role: "user", content: text },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const output = response.data.choices[0].message.content;
+
+    return JSON.parse(output);
+  } catch (err) {
+    console.error("LLM error:", err.message);
+    return null;
+  }
+}
 
 // ================= START =================
 const PORT = process.env.PORT || 3000;
