@@ -91,7 +91,9 @@ export const mockComplaints: Complaint[] = [
   },
 ];
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+// In production, VITE_API_URL points to the deployed backend (e.g. Render).
+// In dev, the Vite proxy at /api forwards to localhost:3000.
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 const VALID_CATEGORIES = new Set(["street_light", "water_supply", "garbage", "drainage", "road", "other"]);
 
@@ -108,34 +110,29 @@ function normalizeCategory(raw?: string): Category {
 }
 
 export async function fetchComplaints(): Promise<Complaint[]> {
-  for (const base of ["/api", API_URL]) {
-    try {
-      console.log(`📡 Trying ${base}/complaints...`);
-      const res = await fetch(`${base}/complaints`);
-      if (!res.ok) continue;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data: any[] = await res.json();
-      console.log(`✅ Fetched ${data.length} complaints from ${base}`);
+  try {
+    const res = await fetch(`${API_URL}/complaints`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any[] = await res.json();
 
-      // Normalize backend data — handle incomplete/varied documents
-      return data.map((c) => ({
-        _id: c._id,
-        name: c.name || "Unknown Caller",
-        address: c.address || "Not provided",
-        issue: c.issue || c.text || "No description",
-        category: normalizeCategory(c.category),
-        ward: c.ward || "—",
-        zone: c.zone || undefined,
-        status: c.status || "pending",
-        createdAt: c.createdAt,
-        recordingUrl: c.recordingUrl,
-        assignedTo: c.assignedTo,
-      }));
-    } catch {
-      continue;
-    }
+    // Normalize backend data — handle incomplete/varied documents
+    return data.map((c) => ({
+      _id: c._id,
+      name: c.name || "Unknown Caller",
+      address: c.address || "Not provided",
+      issue: c.issue || c.text || "No description",
+      category: normalizeCategory(c.category),
+      ward: c.ward || "—",
+      zone: c.zone || undefined,
+      status: c.status || "pending",
+      createdAt: c.createdAt,
+      recordingUrl: c.recordingUrl,
+      assignedTo: c.assignedTo,
+    }));
+  } catch (err) {
+    console.warn("⚠ Backend unreachable, using mock data:", err);
+    return mockComplaints;
   }
-  console.warn("⚠ Backend unreachable, using mock data");
-  return mockComplaints;
 }
 

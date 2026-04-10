@@ -14,41 +14,28 @@ export const roleLabel: Record<string, string> = {
   field_worker: "Field Worker",
 };
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 export async function fetchEmployees(): Promise<Employee[]> {
-  // Try proxy first, then direct backend
-  for (const base of ["/api", API_URL]) {
-    try {
-      const res = await fetch(`${base}/employees`);
-      if (!res.ok) continue;
-      const data = await res.json();
-      console.log(`✅ Fetched ${data.length} employees from ${base}`);
-      return data;
-    } catch {
-      continue;
-    }
+  try {
+    const res = await fetch(`${API_URL}/employees`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn("⚠ Could not fetch employees:", err);
+    return [];
   }
-  console.warn("⚠ Could not fetch employees from any source");
-  return [];
 }
 
 export async function assignComplaint(
   complaintId: string,
   data: { status?: string; assignedTo?: string | null; notes?: string }
 ) {
-  for (const base of ["/api", "http://localhost:3000"]) {
-    try {
-      const res = await fetch(`${base}/complaints/${complaintId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) continue;
-      return await res.json();
-    } catch {
-      continue;
-    }
-  }
-  throw new Error("Could not reach backend");
+  const res = await fetch(`${API_URL}/complaints/${complaintId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
 }
